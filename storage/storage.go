@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"os"
 	"time"
 
@@ -93,6 +94,7 @@ type Options struct {
 	RequestPayer           string
 	Profile                string
 	CredentialFile         string
+	Credentials            *credentials.Credentials
 	bucket                 string
 	region                 string
 }
