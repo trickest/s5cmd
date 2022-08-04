@@ -1,4 +1,4 @@
-module github.com/trickest/s5cmd
+module github.com/peak/s5cmd
 
 go 1.13
 
