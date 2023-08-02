@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -10,11 +11,9 @@ import (
 func TestDiskUsageSingleS3Object(t *testing.T) {
 	t.Parallel()
 
+	s3client, s5cmd := setup(t)
+
 	bucket := s3BucketFromTestName(t)
-
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
-
 	createBucket(t, s3client, bucket)
 
 	// create 2 files, expect 1.
@@ -34,11 +33,8 @@ func TestDiskUsageSingleS3Object(t *testing.T) {
 func TestDiskUsageSingleS3ObjectJSON(t *testing.T) {
 	t.Parallel()
 
+	s3client, s5cmd := setup(t)
 	bucket := s3BucketFromTestName(t)
-
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
-
 	createBucket(t, s3client, bucket)
 
 	// create 2 files, expect 1.
@@ -53,22 +49,19 @@ func TestDiskUsageSingleS3ObjectJSON(t *testing.T) {
 	assertLines(t, result.Stdout(), map[int]compareFunc{
 		0: json(`
 			{
-				"source": "s3://test-disk-usage-single-s-3-object-json/testfile1.txt",
+				"source": "s3://%v/testfile1.txt",
 				"count":1,
 				"size":22
 			}
-		`),
+		`, bucket),
 	})
 }
 
 func TestDiskUsageMultipleS3Objects(t *testing.T) {
 	t.Parallel()
 
+	s3client, s5cmd := setup(t)
 	bucket := s3BucketFromTestName(t)
-
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
-
 	createBucket(t, s3client, bucket)
 
 	putFile(t, s3client, bucket, "testfile1.txt", "this is a file content")
@@ -88,11 +81,9 @@ func TestDiskUsageMultipleS3Objects(t *testing.T) {
 func TestDiskUsageWildcard(t *testing.T) {
 	t.Parallel()
 
+	s3client, s5cmd := setup(t)
+
 	bucket := s3BucketFromTestName(t)
-
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
-
 	createBucket(t, s3client, bucket)
 	putFile(t, s3client, bucket, "testfile1.txt", "this is a file content")
 	putFile(t, s3client, bucket, "testfile2.txt", "this is also a file content")
@@ -112,11 +103,9 @@ func TestDiskUsageWildcard(t *testing.T) {
 func TestDiskUsageS3ObjectsAndFolders(t *testing.T) {
 	t.Parallel()
 
+	s3client, s5cmd := setup(t)
+
 	bucket := s3BucketFromTestName(t)
-
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
-
 	createBucket(t, s3client, bucket)
 	putFile(t, s3client, bucket, "testfile1.txt", "content")
 	putFile(t, s3client, bucket, "report.gz", "content")
@@ -142,11 +131,9 @@ func TestDiskUsageS3ObjectsAndFolders(t *testing.T) {
 func TestDiskUsageWildcardS3ObjectsWithDashH(t *testing.T) {
 	t.Parallel()
 
+	s3client, s5cmd := setup(t)
+
 	bucket := s3BucketFromTestName(t)
-
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
-
 	createBucket(t, s3client, bucket)
 
 	putFile(t, s3client, bucket, "testfile1.txt", strings.Repeat("this is a file content", 10000))
@@ -166,11 +153,9 @@ func TestDiskUsageWildcardS3ObjectsWithDashH(t *testing.T) {
 func TestDiskUsageMissingObject(t *testing.T) {
 	t.Parallel()
 
+	s3client, s5cmd := setup(t)
+
 	bucket := s3BucketFromTestName(t)
-
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
-
 	createBucket(t, s3client, bucket)
 
 	cmd := s5cmd("du", "s3://"+bucket+"/non-existent-file")
@@ -190,8 +175,7 @@ func TestDiskUsageWildcardWithExcludeFilter(t *testing.T) {
 
 	bucket := s3BucketFromTestName(t)
 
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
+	s3client, s5cmd := setup(t)
 
 	const excludePattern = "main*"
 
@@ -220,8 +204,7 @@ func TestDiskUsageWildcardWithExcludeFilters(t *testing.T) {
 
 	bucket := s3BucketFromTestName(t)
 
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
+	s3client, s5cmd := setup(t)
 
 	const (
 		excludePattern1 = "main*"
@@ -245,4 +228,75 @@ func TestDiskUsageWildcardWithExcludeFilters(t *testing.T) {
 	assertLines(t, result.Stdout(), map[int]compareFunc{
 		0: suffix(`84 bytes in 3 objects: s3://%v/*`, bucket),
 	})
+}
+
+func TestDiskUsageByVersionIDAndAllVersions(t *testing.T) {
+	skipTestIfGCS(t, "versioning is not supported in GCS")
+
+	t.Parallel()
+
+	bucket := s3BucketFromTestName(t)
+
+	// versioninng is only supported with in memory backend!
+	s3client, s5cmd := setup(t, withS3Backend("mem"))
+
+	const filename = "testfile.txt"
+
+	var (
+		contents = []string{
+			"This is first content",
+			"Second content it is, and it is a bit longer!!!",
+		}
+		sizes = []int{len(contents[0]), len(contents[1])}
+	)
+
+	// create a bucket and Enable versioning
+	createBucket(t, s3client, bucket)
+	setBucketVersioning(t, s3client, bucket, "Enabled")
+
+	// upload two versions of the file with same key
+	putFile(t, s3client, bucket, filename, contents[0])
+	putFile(t, s3client, bucket, filename, contents[1])
+
+	//  get disk usage
+	cmd := s5cmd("du", "s3://"+bucket+"/"+filename)
+	result := icmd.RunCmd(cmd)
+
+	assertLines(t, result.Stdout(), map[int]compareFunc{
+		0: equals(fmt.Sprintf("%d bytes in %d objects: s3://%v/%v", sizes[1], 1, bucket, filename)),
+	})
+
+	// we expect to see disk usage of 2 versions of objects
+	cmd = s5cmd("du", "--all-versions", "s3://"+bucket+"/"+filename)
+	result = icmd.RunCmd(cmd)
+
+	assertLines(t, result.Stdout(), map[int]compareFunc{
+		0: equals(fmt.Sprintf("%d bytes in %d objects: s3://%v/%v", sizes[0]+sizes[1], 2, bucket, filename)),
+	})
+
+	// now we will list and parse their version IDs
+	cmd = s5cmd("ls", "--all-versions", "s3://"+bucket+"/"+filename)
+	result = icmd.RunCmd(cmd)
+
+	assertLines(t, result.Stdout(), map[int]compareFunc{
+		0: contains("%v", filename),
+		1: contains("%v", filename),
+	})
+
+	versionIDs := make([]string, 0)
+	for _, row := range strings.Split(result.Stdout(), "\n") {
+		if row != "" {
+			arr := strings.Split(row, " ")
+			versionIDs = append(versionIDs, arr[len(arr)-1])
+		}
+	}
+
+	for i, version := range versionIDs {
+		cmd = s5cmd("du", "--version-id", version,
+			fmt.Sprintf("s3://%v/%v", bucket, filename))
+		result = icmd.RunCmd(cmd)
+		assertLines(t, result.Stdout(), map[int]compareFunc{
+			0: equals(fmt.Sprintf("%d bytes in %d objects: s3://%v/%v", sizes[i], 1, bucket, filename)),
+		})
+	}
 }

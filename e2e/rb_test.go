@@ -13,13 +13,12 @@ import (
 func TestRemoveBucketSuccess(t *testing.T) {
 	t.Parallel()
 
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
+	s3client, s5cmd := setup(t)
 
-	bucketName := "bucket"
-	src := fmt.Sprintf("s3://%v", bucketName)
+	bucket := s3BucketFromTestName(t)
+	src := fmt.Sprintf("s3://%v", bucket)
 
-	createBucket(t, s3client, bucketName)
+	createBucket(t, s3client, bucket)
 
 	cmd := s5cmd("rb", src)
 	result := icmd.RunCmd(cmd)
@@ -30,7 +29,7 @@ func TestRemoveBucketSuccess(t *testing.T) {
 		0: equals(`rb %v`, src),
 	})
 
-	_, err := s3client.HeadBucket(&s3.HeadBucketInput{Bucket: aws.String(bucketName)})
+	_, err := s3client.HeadBucket(&s3.HeadBucketInput{Bucket: aws.String(bucket)})
 
 	if err == nil {
 		t.Errorf("bucket still exists after remove bucket operation\n")
@@ -40,13 +39,12 @@ func TestRemoveBucketSuccess(t *testing.T) {
 func TestRemoveBucketSuccessJson(t *testing.T) {
 	t.Parallel()
 
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
+	s3client, s5cmd := setup(t)
 
-	bucketName := "bucket"
-	src := fmt.Sprintf("s3://%v", bucketName)
+	bucket := s3BucketFromTestName(t)
+	src := fmt.Sprintf("s3://%v", bucket)
 
-	createBucket(t, s3client, bucketName)
+	createBucket(t, s3client, bucket)
 
 	cmd := s5cmd("--json", "rb", src)
 	result := icmd.RunCmd(cmd)
@@ -65,7 +63,7 @@ func TestRemoveBucketSuccessJson(t *testing.T) {
 		0: json(jsonText, src),
 	}, jsonCheck(true))
 
-	_, err := s3client.HeadBucket(&s3.HeadBucketInput{Bucket: aws.String(bucketName)})
+	_, err := s3client.HeadBucket(&s3.HeadBucketInput{Bucket: aws.String(bucket)})
 	if err == nil {
 		t.Errorf("bucket still exists after remove bucket operation\n")
 	}
@@ -74,11 +72,10 @@ func TestRemoveBucketSuccessJson(t *testing.T) {
 func TestRemoveBucketFailure(t *testing.T) {
 	t.Parallel()
 
-	_, s5cmd, cleanup := setup(t)
-	defer cleanup()
+	_, s5cmd := setup(t)
 
-	bucketName := "invalid/bucket/name"
-	src := fmt.Sprintf("s3://%s", bucketName)
+	bucket := "invalid/bucket/name"
+	src := fmt.Sprintf("s3://%s", bucket)
 	cmd := s5cmd("rb", src)
 	result := icmd.RunCmd(cmd)
 
@@ -92,11 +89,10 @@ func TestRemoveBucketFailure(t *testing.T) {
 func TestRemoveBucketFailureJson(t *testing.T) {
 	t.Parallel()
 
-	_, s5cmd, cleanup := setup(t)
-	defer cleanup()
+	_, s5cmd := setup(t)
 
-	bucketName := "invalid/bucket/name"
-	src := fmt.Sprintf("s3://%s", bucketName)
+	bucket := "invalid/bucket/name"
+	src := fmt.Sprintf("s3://%s", bucket)
 	cmd := s5cmd("--json", "rb", src)
 	result := icmd.RunCmd(cmd)
 
@@ -111,24 +107,22 @@ func TestRemoveBucketWithObject(t *testing.T) {
 	t.Parallel()
 
 	const (
-		bucket      = "test-bucket"
 		fileContent = "this is a file content"
 		fileName    = "file1.txt"
 	)
+	s3client, s5cmd := setup(t)
 
-	s3client, s5cmd, cleanup := setup(t)
-	defer cleanup()
-
+	bucket := s3BucketFromTestName(t)
 	createBucket(t, s3client, bucket)
 	putFile(t, s3client, bucket, fileName, fileContent)
 
-	bucketName := fmt.Sprintf("s3://%v", bucket)
-	cmd := s5cmd("rb", bucketName)
+	src := fmt.Sprintf("s3://%v", bucket)
+	cmd := s5cmd("rb", src)
 	result := icmd.RunCmd(cmd)
 
 	result.Assert(t, icmd.Expected{ExitCode: 1})
 
-	expected := fmt.Sprintf(`ERROR "rb %v": BucketNotEmpty:`, bucketName) // error due to non-empty bucket.
+	expected := fmt.Sprintf(`ERROR "rb %v": BucketNotEmpty:`, src) // error due to non-empty bucket.
 
 	assertLines(t, result.Stderr(), map[int]compareFunc{
 		0: match(expected),

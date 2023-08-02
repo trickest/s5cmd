@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/peak/s5cmd/strutil"
 )
 
 func TestHasWild(t *testing.T) {
@@ -70,7 +71,7 @@ func TestNew(t *testing.T) {
 				Prefix:    "key",
 				Delimiter: "/",
 			},
-			wantFilterRe: regexp.MustCompile(`^key.*$`).String(),
+			wantFilterRe: regexp.MustCompile(strutil.AddNewLineFlag(`^key.*$`)).String(),
 		},
 		{
 			name:   "url_with_no_wildcard_end_with_slash",
@@ -82,7 +83,7 @@ func TestNew(t *testing.T) {
 				Prefix:    "key/",
 				Delimiter: "/",
 			},
-			wantFilterRe: regexp.MustCompile(`^key/.*$`).String(),
+			wantFilterRe: regexp.MustCompile(strutil.AddNewLineFlag(`^key/.*$`)).String(),
 		},
 		{
 			name:   "url_with_wildcard",
@@ -92,10 +93,10 @@ func TestNew(t *testing.T) {
 				Bucket:      "bucket",
 				Path:        "key/a/?/test/*",
 				Prefix:      "key/a/",
-				filterRegex: regexp.MustCompile(`^key/a/./test/.*?$`),
+				filterRegex: regexp.MustCompile(strutil.AddNewLineFlag(`^key/a/./test/.*$`)),
 				Delimiter:   "",
 			},
-			wantFilterRe: regexp.MustCompile(`^key/a/./test/.*?$`).String(),
+			wantFilterRe: regexp.MustCompile(strutil.AddNewLineFlag(`^key/a/./test/.*$`)).String(),
 		},
 	}
 	for _, tc := range tests {
@@ -112,7 +113,6 @@ func TestNew(t *testing.T) {
 			if tc.wantFilterRe != "" {
 				if diff := cmp.Diff(tc.wantFilterRe, got.filterRegex.String()); diff != "" {
 					t.Errorf("test case %q: URL.filterRegex mismatch (-want +got):\n%v", tc.name, diff)
-
 				}
 			}
 		})
@@ -228,7 +228,7 @@ func TestURLSetPrefixAndFilter(t *testing.T) {
 				Prefix:      "a/b_c/",
 				Delimiter:   "",
 				filter:      "*/de/*/test",
-				filterRegex: regexp.MustCompile("^a/b_c/.*?/de/.*?/test$"),
+				filterRegex: regexp.MustCompile(strutil.AddNewLineFlag("^a/b_c/.*/de/.*/test$")),
 			},
 		},
 		{
@@ -241,7 +241,7 @@ func TestURLSetPrefixAndFilter(t *testing.T) {
 				Prefix:      "a/b_c/d/e",
 				Delimiter:   "/",
 				filter:      "",
-				filterRegex: regexp.MustCompile("^a/b_c/d/e.*$"),
+				filterRegex: regexp.MustCompile(strutil.AddNewLineFlag("^a/b_c/d/e.*$")),
 			},
 		},
 	}
@@ -596,6 +596,50 @@ func TestURLSetRelative(t *testing.T) {
 
 			if diff := cmp.Diff(tt.expect, targUrl.Relative()); diff != "" {
 				t.Errorf("SetRelative() with %s did not produce expected path (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
+func TestToFromBytes(t *testing.T) {
+	testcases := []struct {
+		name     string
+		key      string
+		relative string
+	}{
+		{
+			name:     "plain remote",
+			key:      "s3://bucket/file",
+			relative: "file",
+		},
+		{
+			name:     "space char remote",
+			key:      "s3://bucket/s ace/file",
+			relative: "s ace/file",
+		},
+		{
+			name:     "space char remote",
+			key:      "s3://bucket/li\ne/file",
+			relative: "li\ne/file",
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			url, err := New(tc.key)
+			if err != nil {
+				t.Errorf("URL cannot be instantiated: \nPath: %v, Error: %v", tc.key, err)
+			}
+
+			url.relativePath = tc.relative
+
+			newURL := FromBytes(url.ToBytes()).(*URL)
+
+			if !reflect.DeepEqual(url, newURL) {
+				t.Errorf("got = %q, want %q", url, newURL)
+			}
+			if !url.deepEqual(newURL) {
+				t.Errorf("Not equal")
 			}
 		})
 	}

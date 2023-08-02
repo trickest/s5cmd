@@ -2,6 +2,8 @@
 package url
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -10,6 +12,9 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+
+	"github.com/lanrat/extsort"
+	"github.com/peak/s5cmd/strutil"
 )
 
 const (
@@ -35,12 +40,14 @@ const (
 // URL is the canonical representation of an object, either on local or remote
 // storage.
 type URL struct {
-	Type      urlType
-	Scheme    string
-	Bucket    string
-	Path      string
-	Delimiter string
-	Prefix    string
+	Type        urlType
+	Scheme      string
+	Bucket      string
+	Path        string
+	Delimiter   string
+	Prefix      string
+	VersionID   string
+	AllVersions bool
 
 	relativePath string
 	filter       string
@@ -53,6 +60,18 @@ type Option func(u *URL)
 func WithRaw(mode bool) Option {
 	return func(u *URL) {
 		u.raw = mode
+	}
+}
+
+func WithVersion(versionId string) Option {
+	return func(u *URL) {
+		u.VersionID = versionId
+	}
+}
+
+func WithAllVersions(isAllVersions bool) Option {
+	return func(u *URL) {
+		u.AllVersions = isAllVersions
 	}
 }
 
@@ -145,6 +164,11 @@ func (u *URL) IsBucket() bool {
 	return u.IsRemote() && u.Path == ""
 }
 
+// IsVersioned returns true if the URL has versioning related values
+func (u *URL) IsVersioned() bool {
+	return u.AllVersions || u.VersionID != ""
+}
+
 // Absolute returns the absolute URL format of the object.
 func (u *URL) Absolute() string {
 	if !u.IsRemote() {
@@ -226,31 +250,30 @@ func (u *URL) remoteURL() string {
 // prefix is the part that comes before the wildcard string.
 //
 // Example:
-//		key: a/b/test?/c/*.tsv
-//		prefix: a/b/test
-//		filter: ?/c/*
-//		regex: ^a/b/test./c/.*?\\.tsv$
-//		delimiter: ""
+//
+//	key: a/b/test?/c/*.tsv
+//	prefix: a/b/test
+//	filter: ?/c/*
+//	regex: ^a/b/test./c/.*?\\.tsv$
+//	delimiter: ""
 //
 // It prepares delimiter, prefix and regex for regular strings.
 // These are used in S3 listing operations.
 // See: https://docs.aws.amazon.com/AmazonS3/latest/dev/ListingKeysHierarchy.html
 //
 // Example:
-//		key: a/b/c
-//		prefix: a/b/c
-//		filter: ""
-//		regex: ^a/b/c.*$
-//		delimiter: "/"
 //
+//	key: a/b/c
+//	prefix: a/b/c
+//	filter: ""
+//	regex: ^a/b/c.*$
+//	delimiter: "/"
 func (u *URL) setPrefixAndFilter() error {
 	if u.raw {
 		return nil
 	}
 
-	loc := strings.IndexAny(u.Path, globCharacters)
-	wildOperation := loc > -1
-	if !wildOperation {
+	if loc := strings.IndexAny(u.Path, globCharacters); loc < 0 {
 		u.Delimiter = s3Separator
 		u.Prefix = u.Path
 	} else {
@@ -260,12 +283,12 @@ func (u *URL) setPrefixAndFilter() error {
 
 	filterRegex := matchAllRe
 	if u.filter != "" {
-		filterRegex = regexp.QuoteMeta(u.filter)
-		filterRegex = strings.Replace(filterRegex, "\\?", ".", -1)
-		filterRegex = strings.Replace(filterRegex, "\\*", ".*?", -1)
+		filterRegex = strutil.WildCardToRegexp(u.filter)
 	}
 	filterRegex = regexp.QuoteMeta(u.Prefix) + filterRegex
-	r, err := regexp.Compile("^" + filterRegex + "$")
+	filterRegex = strutil.MatchFromStartToEnd(filterRegex)
+	filterRegex = strutil.AddNewLineFlag(filterRegex)
+	r, err := regexp.Compile(filterRegex)
 	if err != nil {
 		return err
 	}
@@ -276,16 +299,19 @@ func (u *URL) setPrefixAndFilter() error {
 // Clone creates a copy of the receiver.
 func (u *URL) Clone() *URL {
 	return &URL{
-		Type:      u.Type,
-		Scheme:    u.Scheme,
-		Bucket:    u.Bucket,
-		Delimiter: u.Delimiter,
-		Path:      u.Path,
-		Prefix:    u.Prefix,
+		Type:        u.Type,
+		Scheme:      u.Scheme,
+		Bucket:      u.Bucket,
+		Path:        u.Path,
+		Delimiter:   u.Delimiter,
+		Prefix:      u.Prefix,
+		VersionID:   u.VersionID,
+		AllVersions: u.AllVersions,
 
 		relativePath: u.relativePath,
 		filter:       u.filter,
 		filterRegex:  u.filterRegex,
+		raw:          u.raw,
 	}
 }
 
@@ -325,6 +351,10 @@ func (u *URL) SetRelative(base *URL) {
 
 // Match reports whether if given key matches with the object.
 func (u *URL) Match(key string) bool {
+	if u.filterRegex == nil {
+		return false
+	}
+
 	if !u.filterRegex.MatchString(key) {
 		return false
 	}
@@ -351,6 +381,31 @@ func (u *URL) MarshalJSON() ([]byte, error) {
 	return json.Marshal(u.String())
 }
 
+func (u URL) ToBytes() []byte {
+	buf := bytes.NewBuffer(make([]byte, 0))
+	enc := gob.NewEncoder(buf)
+	enc.Encode(u.Absolute())
+	enc.Encode(u.relativePath)
+	enc.Encode(u.raw)
+	return buf.Bytes()
+}
+
+func FromBytes(data []byte) extsort.SortType {
+	buf := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buf)
+	var (
+		abs, rel string
+		raw      bool
+	)
+	dec.Decode(&abs)
+	dec.Decode(&rel)
+	dec.Decode(&raw)
+
+	url, _ := New(abs, WithRaw(raw))
+	url.relativePath = rel
+	return url
+}
+
 // IsWildcard reports whether if a string contains any wildcard chars.
 func (u *URL) IsWildcard() bool {
 	return !u.raw && hasGlobCharacter(u.Path)
@@ -361,10 +416,10 @@ func (u *URL) IsWildcard() bool {
 // wildcard part (filter)
 //
 // Example:
-//		key: a/b/test2/c/example_file.tsv
-//		prefix: a/b/
-//		output: test2/c/example_file.tsv
 //
+//	key: a/b/test2/c/example_file.tsv
+//	prefix: a/b/
+//	output: test2/c/example_file.tsv
 func parseBatch(prefix string, key string) string {
 	index := strings.LastIndex(prefix, s3Separator)
 	if index < 0 || !strings.HasPrefix(key, prefix) {
@@ -380,10 +435,10 @@ func parseBatch(prefix string, key string) string {
 // path.
 //
 // Example:
-//		key: a/b/c/d
-//		prefix: a/b
-//		output: c/
 //
+//	key: a/b/c/d
+//	prefix: a/b
+//	output: c/
 func parseNonBatch(prefix string, key string) string {
 	if key == prefix || !strings.HasPrefix(key, prefix) {
 		return key
@@ -418,4 +473,20 @@ func (u *URL) EscapedPath() string {
 		sourceKeyElements[i] = url.QueryEscape(element)
 	}
 	return strings.Join(sourceKeyElements, "/")
+}
+
+// check if all fields of URL equal
+func (u *URL) deepEqual(url *URL) bool {
+	if url.Absolute() != u.Absolute() ||
+		url.Type != u.Type ||
+		url.Scheme != u.Scheme ||
+		url.Bucket != u.Bucket ||
+		url.Delimiter != u.Delimiter ||
+		url.Path != u.Path ||
+		url.Prefix != u.Prefix ||
+		url.relativePath != u.relativePath ||
+		url.filter != u.filter {
+		return false
+	}
+	return true
 }

@@ -39,7 +39,7 @@ Examples:
 `
 
 func NewMoveCommand() *cli.Command {
-	return &cli.Command{
+	cmd := &cli.Command{
 		Name:               "mv",
 		HelpName:           "mv",
 		Usage:              "move/rename objects",
@@ -52,7 +52,14 @@ func NewMoveCommand() *cli.Command {
 			defer stat.Collect(c.Command.FullName(), &err)()
 
 			// delete source
-			return NewCopy(c, true).Run(c.Context)
+			copy, err := NewCopy(c, true)
+			if err != nil {
+				return err
+			}
+			return copy.Run(c.Context)
 		},
 	}
+
+	cmd.BashComplete = getBashCompleteFn(cmd, false, false)
+	return cmd
 }

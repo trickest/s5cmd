@@ -1,4 +1,4 @@
-[![Go Report](https://goreportcard.com/badge/github.com/peak/s5cmd)](https://goreportcard.com/report/github.com/peak/s5cmd) ![Github Actions Status](https://github.com/peak/s5cmd/workflows/CI/badge.svg)
+[![Go Report](https://goreportcard.com/badge/github.com/peak/s5cmd)](https://goreportcard.com/report/github.com/peak/s5cmd) ![Github Actions Status](https://github.com/peak/s5cmd/actions/workflows/ci.yml/badge.svg)
 
 ![](./doc/s5cmd_header.jpg)
 
@@ -63,7 +63,7 @@ For macOS, a [homebrew](https://brew.sh) tap is provided:
 
 ### Unofficial Releases (by Community)
 [![Packaging status](https://repology.org/badge/tiny-repos/s5cmd.svg)](https://repology.org/project/s5cmd/versions)
-> **Warning**  
+> **Warning**
 > These releases are maintained by the community. They might be out of date compared to the official releases.
 
 #### MacPorts
@@ -91,7 +91,7 @@ ps.  Quoted from [s5cmd feedstock](https://github.com/conda-forge/s5cmd-feedstoc
 
 ### Build from source
 
-You can build `s5cmd` from source if you have [Go](https://golang.org/dl/) 1.16+
+You can build `s5cmd` from source if you have [Go](https://golang.org/dl/) 1.17+
 installed.
 
     go get github.com/peak/s5cmd
@@ -290,9 +290,6 @@ rm s3://bucket/2020/03/19/file2.gz
 
 # rename an S3 object
 mv s3://bucket/2020/03/18/file1.gz s3://bucket/2020/03/18/original/file.gz
-
-# list all buckets
-ls # inline comments are OK too
 ```
 
 #### Sync
@@ -438,14 +435,28 @@ While executing the commands, `s5cmd` detects the region according to the follow
 
 ### Shell auto-completion
 
-Shell completion is supported for bash, zsh and fish.
+Shell completion is supported for bash, pwsh (PowerShell) and zsh.
 
-To enable auto-completion, run:
+Run `s5cmd --install-completion` to obtain the appropriate auto-completion script for your shell, note that `install-completion` does not install the auto-completion but merely gives the instructions to install. The name is kept as it is for backward compatibility.
 
-    s5cmd --install-completion
+To actually enable auto-completion:
+####  in bash and zsh:
+ you should add auto-completion script to `.bashrc` and `.zshrc` file.
+#### in pwsh:
+you should save the autocompletion script to a file named `s5cmd.ps1` and add the full path of "s5cmd.ps1" file to profile file (which you can locate with `$profile`)
 
-This will add a few lines to your shell configuration file. After installation,
-restart your shell to activate the changes.
+
+Finally, restart your shell to activate the changes.
+
+> **Note**
+The environment variable `SHELL` must be accurate for the autocompletion to function properly. That is it should point to `bash` binary in bash, to `zsh` binary in zsh and to `pwsh` binary in PowerShell.
+
+
+> **Note**
+The autocompletion is tested with following versions of the shells: \
+***zsh*** 5.8.1 (x86_64-apple-darwin21.0) \
+GNU ***bash***, version 5.1.16(1)-release (x86_64-apple-darwin21.1.0) \
+***PowerShell*** 7.2.6 
 
 ### Google Cloud Storage support
 
@@ -582,6 +593,10 @@ of concurrent systems easy and make full utilization of multi-core processors.
 - *Parallelization.* `s5cmd` starts out with concurrent worker pools and parallelizes
 workloads as much as possible while trying to achieve maximum throughput.
 
+## performance regression tests
+
+[`bench.py`](benchmark/bench.py) script can be used to compare performance of two different s5cmd builds. Refer to this [readme](benchmark/README.md) file for further details.
+
 # Advanced Usage
 
 Some of the advanced usage patterns provided below are inspired by the following [article](https://medium.com/@joshua_robinson/s5cmd-hits-v1-0-and-intro-to-advanced-usage-37ad02f7e895) (thank you! [@joshuarobinson](https://github.com/joshuarobinson))
@@ -645,7 +660,6 @@ with `run` command, it is better to just use
 the latter sends single delete request per thousand objects, whereas using the former approach
 sends a separate delete request for each subcommand provided to `run.` Thus, there can be a
 significant runtime difference between those two approaches.
-
 
 # LICENSE
 

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
@@ -54,22 +53,27 @@ func TestNewSessionPathStyle(t *testing.T) {
 		},
 		{
 			name:            "expect_virtual_host_style_for_transfer_accel",
-			endpoint:        urlpkg.URL{Host: transferAccelEndpoint},
+			endpoint:        urlpkg.URL{Scheme: "https", Host: transferAccelEndpoint},
 			expectPathStyle: false,
 		},
 		{
 			name:            "expect_virtual_host_style_for_google_cloud_storage",
-			endpoint:        urlpkg.URL{Host: gcsEndpoint},
+			endpoint:        urlpkg.URL{Scheme: "https", Host: gcsEndpoint},
 			expectPathStyle: false,
 		},
 		{
 			name:            "expect_path_style_for_localhost",
-			endpoint:        urlpkg.URL{Host: "127.0.0.1"},
+			endpoint:        urlpkg.URL{Scheme: "http", Host: "127.0.0.1"},
+			expectPathStyle: true,
+		},
+		{
+			name:            "expect_path_style_for_secure_localhost",
+			endpoint:        urlpkg.URL{Scheme: "https", Host: "127.0.0.1"},
 			expectPathStyle: true,
 		},
 		{
 			name:            "expect_path_style_for_custom_endpoint",
-			endpoint:        urlpkg.URL{Host: "example.com"},
+			endpoint:        urlpkg.URL{Scheme: "https", Host: "example.com"},
 			expectPathStyle: true,
 		},
 	}
@@ -78,7 +82,7 @@ func TestNewSessionPathStyle(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 
-			opts := Options{Endpoint: tc.endpoint.Hostname()}
+			opts := Options{Endpoint: tc.endpoint.String()}
 			sess, err := globalSessionCache.newSession(context.Background(), opts)
 			if err != nil {
 				t.Fatal(err)
@@ -443,6 +447,11 @@ func TestS3Retry(t *testing.T) {
 			err:           awserr.New("RequestTimeTooSkewed", "The difference between the request time and the server's time is too large.", nil),
 			expectedRetry: 5,
 		},
+		{
+			name:          "SlowDown",
+			err:           awserr.New("SlowDown", "Please reduce your request rate.", nil),
+			expectedRetry: 5,
+		},
 
 		// Throttling errors
 		{
@@ -701,7 +710,7 @@ func TestS3CopyEncryptionRequest(t *testing.T) {
 
 				r.HTTPResponse = &http.Response{
 					StatusCode: http.StatusOK,
-					Body:       ioutil.NopCloser(strings.NewReader("")),
+					Body:       io.NopCloser(strings.NewReader("")),
 				}
 
 				params := r.Params
@@ -803,7 +812,7 @@ func TestS3PutEncryptionRequest(t *testing.T) {
 
 				r.HTTPResponse = &http.Response{
 					StatusCode: http.StatusOK,
-					Body:       ioutil.NopCloser(strings.NewReader("")),
+					Body:       io.NopCloser(strings.NewReader("")),
 				}
 
 				params := r.Params
@@ -896,7 +905,7 @@ func TestS3listObjectsV2(t *testing.T) {
 	mockApi.Handlers.Send.PushBack(func(r *request.Request) {
 		r.HTTPResponse = &http.Response{
 			StatusCode: http.StatusOK,
-			Body:       ioutil.NopCloser(strings.NewReader("")),
+			Body:       io.NopCloser(strings.NewReader("")),
 		}
 
 		r.Data = &s3.ListObjectsV2Output{
@@ -1128,7 +1137,7 @@ func TestSessionAutoRegion(t *testing.T) {
 				r.HTTPResponse = &http.Response{
 					StatusCode: tc.status,
 					Header:     header,
-					Body:       ioutil.NopCloser(strings.NewReader("")),
+					Body:       io.NopCloser(strings.NewReader("")),
 				}
 			})
 
@@ -1260,7 +1269,9 @@ func valueAtPath(i interface{}, s string) interface{} {
 
 // tempError is a wrapper error type that implements anonymous
 // interface getting checked in url.Error.Temporary;
-//    interface { Temporary() bool }
+//
+//	interface { Temporary() bool }
+//
 // see: https://github.com/golang/go/blob/2ebe77a2fda1ee9ff6fd9a3e08933ad1ebaea039/src/net/url/url.go#L38-L43
 //
 // AWS SDK checks if the underlying error in received url.Error implements it;
