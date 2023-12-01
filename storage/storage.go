@@ -60,6 +60,7 @@ func NewLocalClient(opts Options) *Filesystem {
 func NewRemoteClient(ctx context.Context, url *url.URL, opts Options) (*S3, error) {
 	newOpts := Options{
 		MaxRetries:             opts.MaxRetries,
+		AWSCustomRetryer:       opts.AWSCustomRetryer,
 		Endpoint:               opts.Endpoint,
 		NoVerifySSL:            opts.NoVerifySSL,
 		DryRun:                 opts.DryRun,
