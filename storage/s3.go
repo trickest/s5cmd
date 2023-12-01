@@ -882,7 +882,11 @@ func (sc *SessionCache) newSession(ctx context.Context, opts Options) (*session.
 			WithLogger(sdkLogger{})
 	}
 
-	awsCfg.Retryer = newCustomRetryer(opts.MaxRetries)
+	if opts.AWSCustomRetryer != nil {
+		awsCfg.Retryer = opts.AWSCustomRetryer
+	} else {
+		awsCfg.Retryer = newCustomRetryer(opts.MaxRetries)
+	}
 
 	useSharedConfig := session.SharedConfigEnable
 	{

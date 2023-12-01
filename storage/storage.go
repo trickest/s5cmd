@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/aws/aws-sdk-go/aws/credentials"
 	"os"
 	"time"
+
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/request"
 
 	"github.com/peak/s5cmd/log"
 	"github.com/peak/s5cmd/storage/url"
@@ -96,6 +98,7 @@ type Options struct {
 	Profile                string
 	CredentialFile         string
 	Credentials            *credentials.Credentials
+	AWSCustomRetryer       request.Retryer
 	bucket                 string
 	region                 string
 }
