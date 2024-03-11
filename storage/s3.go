@@ -836,8 +836,8 @@ func (sc *SessionCache) newSession(ctx context.Context, opts Options) (*session.
 	if opts.NoSignRequest {
 		// do not sign requests when making service API calls
 		awsCfg = awsCfg.WithCredentials(credentials.AnonymousCredentials)
-	} else if opts.Credentials != nil {
-		awsCfg = awsCfg.WithCredentials(opts.Credentials)
+	} else if opts.StaticCredentials.AccessKeyID != "" && opts.StaticCredentials.SecretAccessKey != "" {
+		awsCfg = awsCfg.WithCredentials(credentials.NewStaticCredentialsFromCreds(opts.StaticCredentials))
 	} else if opts.CredentialFile != "" || opts.Profile != "" {
 		awsCfg = awsCfg.WithCredentials(
 			credentials.NewSharedCredentials(opts.CredentialFile, opts.Profile),
@@ -882,11 +882,7 @@ func (sc *SessionCache) newSession(ctx context.Context, opts Options) (*session.
 			WithLogger(sdkLogger{})
 	}
 
-	if opts.AWSCustomRetryer != nil {
-		awsCfg.Retryer = opts.AWSCustomRetryer
-	} else {
-		awsCfg.Retryer = newCustomRetryer(opts.MaxRetries)
-	}
+	awsCfg.Retryer = newCustomRetryer(opts.MaxRetries, opts.RetryForbidden, opts.ForbiddenRetryCount, opts.ForbiddenRetryDelay)
 
 	useSharedConfig := session.SharedConfigEnable
 	{
@@ -975,13 +971,19 @@ func setSessionRegion(ctx context.Context, sess *session.Session, bucket string)
 // error codes. Such as, retry for S3 InternalError code.
 type customRetryer struct {
 	client.DefaultRetryer
+	retryForbidden      bool
+	forbiddenRetryCount int
+	forbiddenRetryDelay time.Duration
 }
 
-func newCustomRetryer(maxRetries int) *customRetryer {
+func newCustomRetryer(maxRetries int, retryForbidden bool, retryForbiddenCount int, retryForbiddenDelay time.Duration) *customRetryer {
 	return &customRetryer{
 		DefaultRetryer: client.DefaultRetryer{
 			NumMaxRetries: maxRetries,
 		},
+		retryForbidden:      retryForbidden,
+		forbiddenRetryCount: retryForbiddenCount,
+		forbiddenRetryDelay: retryForbiddenDelay,
 	}
 }
 
@@ -998,6 +1000,11 @@ func (c *customRetryer) ShouldRetry(req *request.Request) bool {
 		return false
 	}
 
+	if c.retryForbidden && req.RetryCount < c.forbiddenRetryCount && (errHasCode(req.Error, "Forbidden") ||
+		(req.HTTPResponse != nil && req.HTTPResponse.StatusCode == http.StatusForbidden)) {
+		return true
+	}
+
 	if shouldRetry && req.Error != nil {
 		err := fmt.Errorf("retryable error: %v", req.Error)
 		msg := log.DebugMessage{Err: err.Error()}
@@ -1005,6 +1012,16 @@ func (c *customRetryer) ShouldRetry(req *request.Request) bool {
 	}
 
 	return shouldRetry
+}
+
+// RetryRules overrides SDK's built in DefaultRetryer, adding custom retry
+// logics that are not included in the SDK.
+func (c *customRetryer) RetryRules(req *request.Request) time.Duration {
+	if c.retryForbidden && req.RetryCount < c.forbiddenRetryCount && (errHasCode(req.Error, "Forbidden") ||
+		(req.HTTPResponse != nil && req.HTTPResponse.StatusCode == http.StatusForbidden)) {
+		return c.forbiddenRetryDelay
+	}
+	return c.DefaultRetryer.RetryRules(req)
 }
 
 var insecureHTTPClient = &http.Client{

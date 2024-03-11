@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/request"
-
 	"github.com/peak/s5cmd/log"
 	"github.com/peak/s5cmd/storage/url"
 	"github.com/peak/s5cmd/strutil"
@@ -60,7 +58,9 @@ func NewLocalClient(opts Options) *Filesystem {
 func NewRemoteClient(ctx context.Context, url *url.URL, opts Options) (*S3, error) {
 	newOpts := Options{
 		MaxRetries:             opts.MaxRetries,
-		AWSCustomRetryer:       opts.AWSCustomRetryer,
+		RetryForbidden:         opts.RetryForbidden,
+		ForbiddenRetryCount:    opts.ForbiddenRetryCount,
+		ForbiddenRetryDelay:    opts.ForbiddenRetryDelay,
 		Endpoint:               opts.Endpoint,
 		NoVerifySSL:            opts.NoVerifySSL,
 		DryRun:                 opts.DryRun,
@@ -69,7 +69,7 @@ func NewRemoteClient(ctx context.Context, url *url.URL, opts Options) (*S3, erro
 		RequestPayer:           opts.RequestPayer,
 		Profile:                opts.Profile,
 		CredentialFile:         opts.CredentialFile,
-		Credentials:            opts.Credentials,
+		StaticCredentials:      opts.StaticCredentials,
 		LogLevel:               opts.LogLevel,
 		bucket:                 url.Bucket,
 		region:                 opts.region,
@@ -88,6 +88,9 @@ func NewClient(ctx context.Context, url *url.URL, opts Options) (Storage, error)
 // Options stores configuration for storage.
 type Options struct {
 	MaxRetries             int
+	RetryForbidden         bool
+	ForbiddenRetryCount    int
+	ForbiddenRetryDelay    time.Duration
 	NoSuchUploadRetryCount int
 	Endpoint               string
 	NoVerifySSL            bool
@@ -98,8 +101,7 @@ type Options struct {
 	RequestPayer           string
 	Profile                string
 	CredentialFile         string
-	Credentials            *credentials.Credentials
-	AWSCustomRetryer       request.Retryer
+	StaticCredentials      credentials.Value
 	bucket                 string
 	region                 string
 }

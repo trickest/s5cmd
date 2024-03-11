@@ -530,7 +530,7 @@ func TestS3Retry(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			sess := unit.Session
-			sess.Config.Retryer = newCustomRetryer(expectedRetry)
+			sess.Config.Retryer = newCustomRetryer(expectedRetry, false, 0, 0)
 
 			mockApi := s3.New(sess)
 			mockS3 := &S3{
@@ -1260,7 +1260,9 @@ func valueAtPath(i interface{}, s string) interface{} {
 
 // tempError is a wrapper error type that implements anonymous
 // interface getting checked in url.Error.Temporary;
-//    interface { Temporary() bool }
+//
+//	interface { Temporary() bool }
+//
 // see: https://github.com/golang/go/blob/2ebe77a2fda1ee9ff6fd9a3e08933ad1ebaea039/src/net/url/url.go#L38-L43
 //
 // AWS SDK checks if the underlying error in received url.Error implements it;
